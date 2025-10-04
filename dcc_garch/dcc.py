@@ -1,7 +1,11 @@
 from __future__ import annotations
 import numpy as np
+import pandas as pd
 from dataclasses import dataclass
 from typing import Optional, Dict, Tuple, List
+
+example = pd.DataFrame(np.random.randn(1000, 3), columns=["A", "B", "C"])
+example.head()
 
 try:
     from scipy.optimize import minimize
@@ -308,3 +312,5 @@ class RollingDCC:
             raise RuntimeError("Call fit() first.")
         mats = [r.R_t[-1] for r in self.results_]
         return np.stack(mats, axis=0)
+
+# %%
