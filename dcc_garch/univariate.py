@@ -327,7 +327,8 @@ class UGARCH:
         # Build outputs
         if self.vol == "garch":
             if self.dist == "gaussian":
-                omega, alpha, beta = xhat; nu = None
+                omega, alpha, beta = xhat
+                nu = None
                 sigma2 = self._garch_filter(eps, omega, alpha, beta)
                 params = {"omega": float(omega), "alpha": float(alpha), "beta": float(beta)}
             else:
@@ -337,7 +338,8 @@ class UGARCH:
 
         elif self.vol == "gjr":
             if self.dist == "gaussian":
-                omega, alpha, beta, gamma = xhat; nu = None
+                omega, alpha, beta, gamma = xhat
+                nu = None
                 sigma2 = self._gjr_filter(eps, omega, alpha, beta, gamma)
                 params = {"omega": float(omega), "alpha": float(alpha), "beta": float(beta), "gamma": float(gamma)}
             else:
@@ -406,10 +408,12 @@ class UGARCH:
         fx = f(x)
         for i in range(k):
             ei = np.zeros(k); ei[i] = 1.0
-            f_ip = f(x + h * ei); f_im = f(x - h * ei)
+            f_ip = f(x + h * ei)
+            f_im = f(x - h * ei)
             H[i, i] = (f_ip - 2 * fx + f_im) / (h ** 2)
             for j in range(i + 1, k):
-                ej = np.zeros(k); ej[j] = 1.0
+                ej = np.zeros(k)
+                ej[j] = 1.0
                 f_pp = f(x + h * ei + h * ej)
                 f_pm = f(x + h * ei - h * ej)
                 f_mp = f(x - h * ei + h * ej)
@@ -445,7 +449,8 @@ class UGARCH:
         T = len(eps)
         S = np.zeros((T, k), float)
         for j in range(k):
-            ej = np.zeros(k); ej[j] = 1.0
+            ej = np.zeros(k)
+            ej[j] = 1.0
             lp = self._contribs(xhat + h * ej, eps)
             lm = self._contribs(xhat - h * ej, eps)
             S[:, j] = (lp - lm) / (2 * h)
