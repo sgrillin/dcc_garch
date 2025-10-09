@@ -1,5 +1,6 @@
 from __future__ import annotations
 import numpy as np
+import pandas as pd
 from dataclasses import dataclass
 from typing import Optional, Dict, Tuple, List
 
@@ -462,3 +463,36 @@ class UGARCH:
         se_rob = None if vcov_rob is None else np.sqrt(np.maximum(np.diag(vcov_rob), 0.0))
 
         return vcov, vcov_rob, se, se_rob
+
+    @staticmethod
+    def ugarch_results_df(res) -> pd.DataFrame:
+        """
+        Build a tidy DataFrame of parameter estimates and (robust) SEs
+        from a UGARCHResult.
+        """
+        est = []
+        for name, val in res.params.items():
+            est.append((name, float(val)))
+        df = pd.DataFrame(est, columns=["param", "estimate"]).set_index("param")
+        # add SEs if available
+        if getattr(res, "se", None) is not None:
+            df["se"] = res.se
+        if getattr(res, "se_robust", None) is not None:
+            df["se_robust"] = res.se_robust
+        return df
+
+    @staticmethod
+    def ugarch_summary(res) -> str:
+        df = ugarch_results_df(res)
+        lines = []
+        lines.append("UGARCH Results")
+        lines.append("-" * 60)
+        lines.append(f"dist: {res.dist} | vol: {getattr(res, 'vol', 'garch')} | mean: {getattr(res, 'mean', 'constant')} {getattr(res,'mean_order',(0,0,0))}")
+        lines.append(f"converged: {res.success} | message: {res.message}")
+        lines.append("")
+        lines.append(df.to_string(float_format=lambda x: f"{x:.6g}"))
+        # extras
+        lines.append("")
+        lines.append(f"mu: {res.mu:.6g}")
+        return "\n".join(lines)
+    

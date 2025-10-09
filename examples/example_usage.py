@@ -8,7 +8,7 @@ Basic demo for DCC-GARCH.
 """
 
 import numpy as np
-from dcc_garch import DCC, RollingDCC
+from dcc_garch import DCC
 
 if __name__ == "__main__":
         np.random.seed(42)
