@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Basic demo for DCC-GARCH.
 
