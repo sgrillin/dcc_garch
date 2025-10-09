@@ -10,7 +10,6 @@ Basic demo for DCC-GARCH.
 import numpy as np
 from dcc_garch import DCC, RollingDCC
 
-
 if __name__ == "__main__":
         np.random.seed(42)
         T, N = 800, 5
@@ -30,15 +29,4 @@ if __name__ == "__main__":
         print("Q forecast shape:", fc["Q"].shape)  # (1, N, N)
         print("R forecast shape:", fc["R"].shape)  # (1, N, N)
         print("H forecast shape:", fc["H"].shape)  # (1, N, N)
-
-        # --- Rolling windows example (Gaussian, no asymmetry) ---
-        print("\n=== Rolling DCC (Gaussian) ===")
-        roll = RollingDCC(
-            window=400, step=50, expanding=False,
-            mean="constant", dist="gaussian", asym=False
-        )
-        roll.fit(X)
-        print("Num windows:", len(roll.results_))
-        print("Last R shape per window:", roll.last_correlations().shape)  # (num_windows, N, N)
-        print("Last H shape per window:", roll.last_covariances().shape)   # (num_windows, N, N)")
 
