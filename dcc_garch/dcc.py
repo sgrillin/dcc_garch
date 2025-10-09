@@ -35,6 +35,12 @@ class DCCResult:
     persistence: float
     corr_half_life: float
 
+    def to_frame(self):
+        return dcc_results_df(self)
+
+    def summary(self) -> str:
+        return dcc_summary(self)
+
 class DCC:
     """DCC(1,1)-GARCH with options: Gaussian/Student-t and ADCC asymmetry."""
     def __init__(self,
@@ -308,31 +314,6 @@ class DCC:
             Q_last = Q_next
         return {"Q": np.stack(Q_fore, axis=0), "R": np.stack(R_fore, axis=0), "H": np.stack(H_fore, axis=0)}
 
-    def dcc_results_df(res) -> pd.DataFrame:
-        """
-        Return DCC parameter estimates (a, b, [g], [nu]) in a tidy DataFrame.
-        (SEs omitted unless you implement inference for DCC params.)
-        """
-        rows = [("a", float(res.a)), ("b", float(res.b))]
-        if res.g is not None:
-            rows.append(("g", float(res.g)))
-        if res.nu is not None:
-            rows.append(("nu", float(res.nu)))
-        df = pd.DataFrame(rows, columns=["param", "estimate"]).set_index("param")
-        return df
-
-    def dcc_summary(res) -> str:
-        df = dcc_results_df(res)
-        lines = []
-        lines.append("DCC Results")
-        lines.append("-" * 60)
-        lines.append(f"dist: {res.dist} | asym: {res.g is not None}")
-        lines.append(f"converged: {res.success} | message: {res.message}")
-        lines.append(f"persistence: {res.persistence:.6g} | corr half-life: {res.corr_half_life:.6g}")
-        lines.append("")
-        lines.append(df.to_string(float_format=lambda x: f"{x:.6g}"))
-        return "\n".join(lines)
-
 class RollingDCC:
     def __init__(self, window: Optional[int] = 500, step: int = 1, expanding: bool = False, min_samples: int = 250, **dcc_kwargs):
         self.window = window; self.step = step; self.expanding = expanding; self.min_samples = min_samples
@@ -372,4 +353,29 @@ class RollingDCC:
         mats = [r.R_t[-1] for r in self.results_]
         return np.stack(mats, axis=0)
 
+
+def dcc_results_df(res) -> pd.DataFrame:
+    """
+    Return DCC parameter estimates (a, b, [g], [nu]) in a tidy DataFrame.
+    (SEs omitted unless you implement inference for DCC params.)
+    """
+    rows = [("a", float(res.a)), ("b", float(res.b))]
+    if res.g is not None:
+        rows.append(("g", float(res.g)))
+    if res.nu is not None:
+        rows.append(("nu", float(res.nu)))
+    df = pd.DataFrame(rows, columns=["param", "estimate"]).set_index("param")
+    return df
+
+def dcc_summary(res) -> str:
+    df = dcc_results_df(res)
+    lines = []
+    lines.append("DCC Results")
+    lines.append("-" * 60)
+    lines.append(f"dist: {res.dist} | asym: {res.g is not None}")
+    lines.append(f"converged: {res.success} | message: {res.message}")
+    lines.append(f"persistence: {res.persistence:.6g} | corr half-life: {res.corr_half_life:.6g}")
+    lines.append("")
+    lines.append(df.to_string(float_format=lambda x: f"{x:.6g}"))
+    return "\n".join(lines)
 # %%
