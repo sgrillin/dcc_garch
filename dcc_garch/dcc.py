@@ -4,9 +4,6 @@ import pandas as pd
 from dataclasses import dataclass
 from typing import Optional, Dict, Tuple, List
 
-example = pd.DataFrame(np.random.randn(1000, 3), columns=["A", "B", "C"])
-example.head()
-
 try:
     from scipy.optimize import minimize
     from scipy.special import gammaln
@@ -82,7 +79,8 @@ class DCC:
             Q = (1 - a - b) * Qbar + a * outer + b * Q_prev + asym_term
             Q[np.diag_indices_from(Q)] += self.ridge
             Q_t[t] = Q
-            d = np.sqrt(np.diag(Q)); invd = 1.0 / np.clip(d, 1e-12, None)
+            d = np.sqrt(np.diag(Q))
+            invd = 1.0 / np.clip(d, 1e-12, None)
             R = (invd[:, None] * Q) * invd[None, :]
             R[np.diag_indices_from(R)] = 1.0
             R_t[t] = R
@@ -134,36 +132,67 @@ class DCC:
         X = ensure_2d(returns)
         T, N = X.shape
 
-        ugarch = []
-        mu = np.zeros(N, dtype=float)
-        eps = np.zeros_like(X)
-        sigma = np.zeros_like(X)
-        for i in range(N):
-            model = UGARCH(mean=self.mean, dist="gaussian")
-            res = model.fit(X[:, i])
-            ugarch.append(res.params)
-            mu[i] = res.mu
-            eps[:, i] = res.eps
-            sigma[:, i] = np.sqrt(res.sigma2)
+        # ----- Univariate options (optional overrides) -----
+        u_mean       = getattr(self, "uni_mean", self.mean)                 # 'constant'|'arma'|'arima'
+        u_mean_order = getattr(self, "uni_mean_order", (0, 0, 0))           # (p,d,q) for arma/arima
+        u_vol        = getattr(self, "uni_vol", "garch")                    # 'garch'|'gjr'|'egarch'
+        u_dist       = getattr(self, "uni_dist", "gaussian")                # 'gaussian'|'student'
+        u_kwargs     = getattr(self, "uni_kwargs", {})                      # extra kwargs for UGARCH
 
+        # ----- Preallocate -----
+        ugarch_params: List[Dict[str, float]] = []
+        mu    = np.empty(N, dtype=float)
+        eps   = np.empty_like(X, dtype=float)
+        sigma = np.empty_like(X, dtype=float)
+
+        # ----- Univariate fits (per series) -----
+        for i in range(N):
+            model = UGARCH(mean=u_mean, mean_order=u_mean_order, vol=u_vol, dist=u_dist, **u_kwargs)
+            res = model.fit(X[:, i])
+
+            if not getattr(res, "success", True):
+                raise RuntimeError(f"Univariate fit failed for series {i}: {getattr(res, 'message', 'no message')}")
+
+            ugarch_params.append(res.params)
+            mu[i]       = res.mu
+            eps[:, i]   = res.eps
+            sigma[:, i] = np.sqrt(res.sigma2)  # conditional std dev
+
+        # ----- Standardized residuals -----
         z = eps / np.clip(sigma, 1e-12, None)
 
+        # ----- Long-run target Qbar (with optional shrinkage) -----
         if self.init == "identity":
             Qbar = np.eye(N)
         else:
+            # sample correlation of z
             Qbar = np.cov(z.T)
             d = np.sqrt(np.diag(Qbar)); invd = 1.0 / np.clip(d, 1e-12, None)
             Qbar = (invd[:, None] * Qbar) * invd[None, :]
 
-        a0, b0, g0 = 0.02, 0.95, 0.03 if self.asym else 0.0
+            # optional ridge/shrinkage toward identity if attribute present
+            lam = float(getattr(self, "qbar_shrink", 0.0))
+            if 0.0 < lam < 1.0:
+                Qbar = (1.0 - lam) * Qbar + lam * np.eye(N)
 
+        # ----- Starting values -----
+        a0, b0 = 0.02, 0.95
+        g0 = 0.03 if self.asym else 0.0
+
+        # ----- Optimize correlation params -----
         if self.dist == "gaussian":
             def obj(x):
                 a, b = x[0], x[1]
                 g = x[2] if self.asym else 0.0
                 return self._neg_ll_corr_gaussian(z, a, b, g, Qbar)
-            bounds = (self.bounds_abg[0], self.bounds_abg[1]) + ((self.bounds_abg[2],) if self.asym else ())
-            x0 = np.array([a0, b0] + ([g0] if self.asym else []), dtype=float)
+
+            if self.asym:
+                bounds = (self.bounds_abg[0], self.bounds_abg[1], self.bounds_abg[2])
+                x0 = np.array([a0, b0, g0], dtype=float)
+            else:
+                bounds = (self.bounds_abg[0], self.bounds_abg[1])
+                x0 = np.array([a0, b0], dtype=float)
+
             if _HAVE_SCIPY:
                 res = minimize(obj, x0, method="L-BFGS-B", bounds=bounds)
                 xhat = res.x; success, msg = bool(res.success), str(res.message)
@@ -174,14 +203,18 @@ class DCC:
                     for b in grid:
                         if self.asym:
                             for g in np.linspace(0.0, 0.4, 6):
-                                val = obj(np.array([a,b,g]))
-                                if val < best[0]: best = (val, np.array([a,b,g]))
+                                val = obj(np.array([a, b, g], dtype=float))
+                                if val < best[0]: best = (val, np.array([a, b, g], float))
                         else:
-                            val = obj(np.array([a,b]))
-                            if val < best[0]: best = (val, np.array([a,b]))
-                xhat = best[1]; success, msg = True, "Scipy not available; used coarse grid search."
-            a, b = float(xhat[0]), float(xhat[1]); g = float(xhat[2]) if self.asym else None; nu = None
-        else:
+                            val = obj(np.array([a, b], dtype=float))
+                            if val < best[0]: best = (val, np.array([a, b], float))
+                xhat = best[1]; success, msg = True, "SciPy not available; used coarse grid search."
+
+            a, b = float(xhat[0]), float(xhat[1])
+            g = float(xhat[2]) if self.asym else None
+            nu = None
+
+        else:  # Student-t DCC
             def obj(x):
                 a, b = x[0], x[1]
                 if self.asym:
@@ -191,58 +224,57 @@ class DCC:
                 if not (self.bounds_nu[0] < nu < self.bounds_nu[1]):
                     return 1e12
                 return self._neg_ll_corr_student(z, a, b, g, Qbar, nu)
-            x0 = [a0, b0] + ([g0] if self.asym else []) + [8.0]
+
             if self.asym:
                 bounds = (self.bounds_abg[0], self.bounds_abg[1], self.bounds_abg[2], self.bounds_nu)
+                x0 = np.array([a0, b0, g0, 8.0], dtype=float)
             else:
                 bounds = (self.bounds_abg[0], self.bounds_abg[1], self.bounds_nu)
+                x0 = np.array([a0, b0, 8.0], dtype=float)
+
             if _HAVE_SCIPY:
-                res = minimize(obj, np.array(x0, dtype=float), method="L-BFGS-B", bounds=bounds)
+                res = minimize(obj, x0, method="L-BFGS-B", bounds=bounds)
                 xhat = res.x; success, msg = bool(res.success), str(res.message)
             else:
                 grid = np.linspace(0.01, 0.98, 15); nu_grid = np.linspace(4.0, 30.0, 10)
-                best = (np.inf, np.array(x0, dtype=float))
+                best = (np.inf, x0.copy())
                 for a in grid:
                     for b in grid:
-                        for nu in nu_grid:
+                        for nu_val in nu_grid:
                             if self.asym:
-                                for g in np.linspace(0.0, 0.4, 6):
-                                    x = np.array([a,b,g,nu], dtype=float); val = obj(x)
+                                for g_val in np.linspace(0.0, 0.4, 6):
+                                    x = np.array([a, b, g_val, nu_val], float); val = obj(x)
                                     if val < best[0]: best = (val, x)
                             else:
-                                x = np.array([a,b,nu], dtype=float); val = obj(x)
+                                x = np.array([a, b, nu_val], float); val = obj(x)
                                 if val < best[0]: best = (val, x)
-                xhat = best[1]; success, msg = True, "Scipy not available; used coarse grid search."
-            a, b = float(xhat[0]), float(xhat[1]); g = float(xhat[2]) if self.asym else None
+                xhat = best[1]; success, msg = True, "SciPy not available; used coarse grid search."
+
+            a, b = float(xhat[0]), float(xhat[1])
+            g  = float(xhat[2]) if self.asym else None
             nu = float(xhat[3]) if self.asym else float(xhat[2])
 
+        # ----- Filter correlation path with estimates -----
         Q_t, R_t = self._dcc_filter(z, a, b, (g if g is not None else 0.0), Qbar)
 
+        # ----- Build D_t from exact univariate sigmas and H_t = D_t R_t D_t -----
         D_t = np.zeros((T, N, N), dtype=float)
         for t in range(T):
-            D_t[t] = np.diag(np.maximum(1e-12, np.sqrt(np.var(eps[:t+1,:], axis=0))))  # proxy; better is storing sigma from univariate
-        # For consistency, use sigma path directly:
-        # But we only kept sigma (std) matrix; rebuild
-        D_t = np.zeros((T, N, N), dtype=float)
-        for t in range(T):
-            D_t[t] = np.diag(np.sqrt(np.maximum(1e-12, np.var(eps[max(0,t-1):t+1,:], axis=0))) )
+            D_t[t] = np.diag(np.clip(sigma[t], 1e-12, None))
+        H_t = np.einsum("tij,tjk,tkm->tim", D_t, R_t, D_t)  # (T,N,N)
 
-        # Prefer exact sigma from univariate step:
-        # reconstruct from sigma array we computed above
-        # We'll redo, building sigma directly
-        # (overwrite previous D_t)
-        # sigma is std already computed above
-        D_t = np.zeros((T, N, N), dtype=float)
-        for t in range(T):
-            D_t[t] = np.diag(np.sqrt(np.maximum(1e-12, (np.square(np.sqrt(np.maximum(1e-12, sigma[t])))) )))
-        H_t = np.einsum("tij,tjk,tkm->tim", D_t, R_t, D_t)
-
-        persistence = a + b + (0.5*(g if g is not None else 0.0))
+        # ----- Persistence & half-life -----
+        persistence = a + b + (0.5 * (g if g is not None else 0.0))
         hl = half_life(persistence) if persistence < 1 else np.inf
 
-        result = DCCResult(a=a, b=b, g=g, nu=nu, Q_t=Q_t, R_t=R_t, H_t=H_t, D_t=D_t,
-                           z_t=z, mu=mu, ugarch_params=ugarch, success=success, message=msg,
-                           dist=self.dist, persistence=persistence, corr_half_life=hl)
+        # ----- Pack results -----
+        result = DCCResult(
+            a=a, b=b, g=g, nu=nu,
+            Q_t=Q_t, R_t=R_t, H_t=H_t, D_t=D_t,
+            z_t=z, mu=mu, ugarch_params=ugarch_params,
+            success=success, message=msg, dist=self.dist,
+            persistence=persistence, corr_half_life=hl
+        )
         self.result_ = result
         return result if self.return_result else self
 
@@ -270,7 +302,9 @@ class DCC:
             d = np.sqrt(np.diag(Q_next)); invd = 1.0 / np.clip(d, 1e-12, None)
             R_next = (invd[:, None] * Q_next) * invd[None, :]
             H_next = D_last @ R_next @ D_last
-            Q_fore.append(Q_next); R_fore.append(R_next); H_fore.append(H_next)
+            Q_fore.append(Q_next)
+            R_fore.append(R_next)
+            H_fore.append(H_next)
             Q_last = Q_next
         return {"Q": np.stack(Q_fore, axis=0), "R": np.stack(R_fore, axis=0), "H": np.stack(H_fore, axis=0)}
 
