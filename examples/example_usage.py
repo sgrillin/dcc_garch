@@ -45,8 +45,10 @@ if __name__ == "__main__":
         print(f"dist: {res.dist} | asym: {res.g is not None}")
         print(f"converged: {res.success} | message: {res.message}")
         core = f"a={res.a:.6f}  b={res.b:.6f}"
-        if res.g is not None: core += f"  g={res.g:.6f}"
-        if res.nu is not None: core += f"  nu={res.nu:.4f}"
+        if res.g is not None: 
+            core += f"  g={res.g:.6f}"
+        if res.nu is not None: 
+            core += f"  nu={res.nu:.4f}"
         print(core)
         print(f"persistence={res.persistence:.6f} | corr half-life={res.corr_half_life:.2f}")
 
@@ -77,28 +79,26 @@ if __name__ == "__main__":
     print("H forecast shape:", fc["H"].shape)  # (1, N, N)
 
     # --- Simple plots (if matplotlib is installed) ---
-    if _HAVE_MPL:
-        R_t = res.R_t  # (T, N, N)
 
-        # 1) Time series of dynamic correlation for a pair (0,1)
-        plt.figure()
-        plt.plot(R_t[:, 0, 1])
-        plt.title("Dynamic correlation: assets (0,1)")
-        plt.xlabel("time")
-        plt.ylabel("rho_01")
-        plt.tight_layout()
+    R_t = res.R_t  # (T, N, N)
 
-        # 2) Heatmap of the last correlation matrix
-        plt.figure()
-        im = plt.imshow(R_t[-1], vmin=-1, vmax=1, interpolation="nearest")
-        plt.colorbar(im, label="corr")
-        plt.title("Final correlation matrix $R_T$")
-        plt.xticks(range(N), [f"{i}" for i in range(N)])
-        plt.yticks(range(N), [f"{i}" for i in range(N)])
-        plt.tight_layout()
+    # 1) Time series of dynamic correlation for a pair (0,1)
+    plt.figure()
+    plt.plot(R_t[:, 0, 1])
+    plt.title("Dynamic correlation: assets (0,1)")
+    plt.xlabel("time")
+    plt.ylabel("rho_01")
+    plt.tight_layout()
 
-        plt.show()
-    else:
-        print("\n(matplotlib not installed; skipping plots)")
+    # 2) Heatmap of the last correlation matrix
+    plt.figure()
+    im = plt.imshow(R_t[-1], vmin=-1, vmax=1, interpolation="nearest")
+    plt.colorbar(im, label="corr")
+    plt.title("Final correlation matrix $R_T$")
+    plt.xticks(range(N), [f"{i}" for i in range(N)])
+    plt.yticks(range(N), [f"{i}" for i in range(N)])
+    plt.tight_layout()
+
+    plt.show()
 
 # %%
