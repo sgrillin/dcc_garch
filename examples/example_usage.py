@@ -11,19 +11,13 @@ Basic demo for DCC-GARCH.
 import numpy as np
 import pandas as pd
 from dcc_garch import DCC
+import matplotlib.pyplot as plt
 
 # Optional reporting helpers (if you added them to your package)
 try:
     from dcc_garch.reporting import dcc_summary, dcc_results_df, ugarch_summary, ugarch_results_df
 except Exception:
     dcc_summary = dcc_results_df = ugarch_summary = ugarch_results_df = None
-
-# Optional plotting (kept optional to avoid hard dependency)
-try:
-    import matplotlib.pyplot as plt
-    _HAVE_MPL = True
-except Exception:
-    _HAVE_MPL = False
 
 
 if __name__ == "__main__":
