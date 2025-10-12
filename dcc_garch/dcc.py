@@ -85,7 +85,7 @@ class DCC:
             Q = (1 - a - b) * Qbar + a * outer + b * Q_prev + asym_term
             Q[np.diag_indices_from(Q)] += self.ridge
             Q_t[t] = Q
-            d = np.sqrt(np.diag(Q))
+            d = np.sqrt(np.clip(np.diag(Q), 1e-12, None))
             invd = 1.0 / np.clip(d, 1e-12, None)
             R = (invd[:, None] * Q) * invd[None, :]
             R[np.diag_indices_from(R)] = 1.0
